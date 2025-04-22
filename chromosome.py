@@ -11,8 +11,8 @@ class Chromosome:
     def __init__(
         self,
         id: int,
-        nodes: list[NodeGene] = None,
-        edges: list[EdgeGene] = None,
+        nodes: list[NodeGene] = None, #make a dict where the key is the id and the value is the node
+        edges: list[EdgeGene] = None, #make a dict where the key is the id and the value is the edge
         inputs: int = None,
         outputs: int = None,
         hidden: int = None,
@@ -63,7 +63,7 @@ class Chromosome:
             for node in c.nodes:
                 g.add_node(node.id, layer=node.layer)
             for edge in c.edges:
-                g.add_edge(edge.node, edge.out_edge_to, weight=edge.weight)
+                g.add_edge(edge.source, edge.target, weight=edge.weight)
             return g
 
         def plot_chromosome(

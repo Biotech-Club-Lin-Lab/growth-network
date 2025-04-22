@@ -30,8 +30,8 @@ class EdgeGene:
     def __init__(
         self,
         edge_id: int,
-        node: int,
-        out_edge_to: int,
+        source: int,
+        target: int,
         weight: float,
         enabled: bool = True,
     ):
@@ -40,12 +40,12 @@ class EdgeGene:
         Each edge_gene defines a connection between two neurons with a weight.
 
         :param edge_id: Unique identifier for the gene
-        :param out_edge_to: Output neuron (target node)
+        :param target: Output neuron (target node)
         :param weight: Weight of the connection (can be positive or negative)
         :param enabled: Boolean indicating if the gene is enabled or disabled
         """
         self.id = edge_id  # Unique identifier for the gene
-        self.node = node
-        self.out_edge_to = out_edge_to  # Output neuron
+        self.source = source
+        self.target = target  # Output neuron
         self.weight = weight  # weight
         self.enabled = enabled  # Boolean indicating if the gene is enabled or disabled
