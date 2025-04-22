@@ -9,10 +9,10 @@ To recreate the exact environment used for this project, follow these steps:
 3.  **Create the Conda environment** from the `environment.yml` file:
 
     ```bash
-    conda env create -f environment.yml
+    conda env create -f env.yml
     ```
 
-    This command will create a new Conda environment with all the dependencies listed in the `environment.yml` file.
+    This command will create a new Conda environment with all the dependencies listed in the `env.yml` file.
 
 4.  **Activate the newly created environment:**
 
