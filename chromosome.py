@@ -4,6 +4,7 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 import os
+import pandas as pd
 
 
 class Chromosome:
@@ -61,9 +62,69 @@ class Chromosome:
         self.nodes = nodes
         self.edges = edges
 
+        # Convert nodes to DataFrame for efficient querying
+        nodes_data = []
+        for node_id, node in nodes.items():
+            nodes_data.append({
+                "node_id":node_id,
+                "layer":node.layer
+            })
+        self.nodes_df = pd.DataFrame(nodes_data)
+
+        # Convert edges to DataFrame for efficient querying
+        edges_data = []
+        for edge_id, edge in edges.items():
+            edges_data.append({
+                'edge_id':edge_id,
+                'source':edge.source,
+                'target':edge.target,
+                'weight':edge.weight,
+                'enabled':edge.enabled
+            })
+        self.edges_df = pd.DataFrame(edges_data)
+
+        # Create indices for faster lookups - don't set inplace to avoid modifying original df
+        self.nodes_by_id = self.nodes_df.set_index('node_id')
+
+        # Create multiple indexing structures for edges
+        self.edges_by_id = self.edges_df.set_index('edge_id')
+        self.edges_by_source = self.edges_df.set_index('source')
+        self.edges_by_target = self.edges_df.set_index('target')
+
         # Calculate number of layers dynamically
         layers = set(node.layer for node in self.nodes.values())
         self.num_layers = len(layers)
+    
+    def get_node_by_id(self, node_id):
+        """Get node gene by its ID"""
+        return self.nodes.get(node_id)
+    
+    def get_node_by_layer(self, layer):
+        """Get all nodes in a specific layer"""
+        #Query the data frame
+        node_ids = self.nodes_df[self.nodes_df['layer']==layer]['node_id'].tolist()
+        #Return the actual NodeGene objects
+        return {node_id: self.nodes[node_id] for node_id in node_ids}
+
+    def get_edge_by_id(self, edge_id):
+        """Get edge gene by its ID"""
+        return self.edges.get(edge_id)
+    
+    def get_edges_by_source(self, source_id):
+        """Get all edges from a specific source node"""
+        try:
+            edge_ids = self.edges_df[self.edges_df['source']==source_id]['edge_id']
+            return {edge_id: self.edges[edge_id] for edge_id in edge_ids}
+        except KeyError:
+            return {}
+    
+    def get_edges_by_target(self, target_id):
+        """Get all edges to a specific target node"""
+        try:
+            edge_ids = self.edges_df[self.edges_df['target']==target_id]['edge_id']
+            return {edge_id: self.edges[edge_id] for edge_id in edge_ids}
+        except KeyError:
+            return {}
 
     def show(
         self, width_scale: float = 3.0, min_width: float = 0.5, save: bool = False
