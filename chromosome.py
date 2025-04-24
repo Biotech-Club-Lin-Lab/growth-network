@@ -15,7 +15,6 @@ class Chromosome:
         inputs: int = None,
         outputs: int = None,
         hidden: int = None,
-        num_layers: int = 0
     ):
         self.id = id
 
@@ -24,31 +23,19 @@ class Chromosome:
             nodes = {}
             edges = {}
 
-            node_id = 0
-            edge_id = 0
+            # Create iterables
+            input_ids = range(inputs)
+            hidden_ids = range(inputs, inputs + hidden)
+            output_ids = range(inputs + hidden, inputs + hidden + outputs)
+            count = 0
 
-            # Create input, hidden, and output node IDs
-            input_ids = []
-            hidden_ids = []
-            output_ids = []
-
+            # Create nodes
             for _ in range(inputs):
-                nodes[node_id] = NodeGene(node_id, "input")
-                input_ids.append(node_id)
-                node_id += 1
-
+                nodes[_] = NodeGene(len(nodes), "input")
             for _ in range(hidden):
-                nodes[node_id] = NodeGene(node_id, 1)
-                hidden_ids.append(node_id)
-                node_id += 1
-
+                nodes[inputs + _] = NodeGene(len(nodes), 1)
             for _ in range(outputs):
-                nodes[node_id] = NodeGene(node_id, "output")
-                output_ids.append(node_id)
-                node_id += 1
-
-            # Calculate number of layers (input, hidden, output = 3)
-            self.num_layers = 3
+                nodes[inputs + hidden + _] = NodeGene(len(nodes), "output")
 
             # Create edges between input and hidden nodes
             for i in input_ids:
@@ -57,23 +44,26 @@ class Chromosome:
                 )
                 for h in connectable_hidden:
                     weight = np.random.uniform(-1, 1)
-                    edges[edge_id] = EdgeGene(edge_id, i, h, weight)
-                    edge_id += 1
+                    edges[count] = EdgeGene(len(edges), i, h, weight)
+                    count += 1
 
             # Create edges between hidden and output nodes
             for h in hidden_ids:
                 connectable_output = random.sample(
-                    output_ids, random.randint(int(outputs * connectivity_ratio), outputs)
+                    output_ids,
+                    random.randint(int(outputs * connectivity_ratio), outputs),
                 )
                 for o in connectable_output:
                     weight = np.random.uniform(-1, 1)
-                    edges[edge_id] = EdgeGene(edge_id, h, o, weight)
-                    edge_id += 1
+                    edges[count] = EdgeGene(len(edges), h, o, weight)
+                    count += 1
 
         self.nodes = nodes
         self.edges = edges
-        if not hasattr(self, "num_layers"):
-            self.num_layers = num_layers
+
+        # Calculate number of layers dynamically
+        layers = set(node.layer for node in self.nodes.values())
+        self.num_layers = len(layers)
 
     def show(
         self, width_scale: float = 3.0, min_width: float = 0.5, save: bool = False
