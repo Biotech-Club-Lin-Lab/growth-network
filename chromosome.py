@@ -1,7 +1,6 @@
 from genes import *
 import random
 import numpy as np
-
 import networkx as nx
 import matplotlib.pyplot as plt
 import os
@@ -11,29 +10,46 @@ class Chromosome:
     def __init__(
         self,
         id: int,
-        nodes: list[NodeGene] = None, #make a dict where the key is the id and the value is the node
-        edges: list[EdgeGene] = None, #make a dict where the key is the id and the value is the edge
+        nodes: dict[int, NodeGene] = None,
+        edges: dict[int, EdgeGene] = None,
         inputs: int = None,
         outputs: int = None,
         hidden: int = None,
+        num_layers: int = 0
     ):
         self.id = id
 
         if nodes is None and edges is None:
             connectivity_ratio = 0.5
-            nodes = []
-            edges = []
-            # Create iterables
-            input_ids = range(inputs)
-            hidden_ids = range(inputs, inputs + hidden)
-            output_ids = range(inputs + hidden, inputs + hidden + outputs)
-            # Create nodes per the number of inputs, outputs and hidden nodes
+            nodes = {}
+            edges = {}
+
+            node_id = 0
+            edge_id = 0
+
+            # Create input, hidden, and output node IDs
+            input_ids = []
+            hidden_ids = []
+            output_ids = []
+
             for _ in range(inputs):
-                nodes.append(NodeGene(len(nodes), "input"))
+                nodes[node_id] = NodeGene(node_id, "input")
+                input_ids.append(node_id)
+                node_id += 1
+
             for _ in range(hidden):
-                nodes.append(NodeGene(len(nodes), 1))
+                nodes[node_id] = NodeGene(node_id, 1)
+                hidden_ids.append(node_id)
+                node_id += 1
+
             for _ in range(outputs):
-                nodes.append(NodeGene(len(nodes), "output"))
+                nodes[node_id] = NodeGene(node_id, "output")
+                output_ids.append(node_id)
+                node_id += 1
+
+            # Calculate number of layers (input, hidden, output = 3)
+            self.num_layers = 3
+
             # Create edges between input and hidden nodes
             for i in input_ids:
                 connectable_hidden = random.sample(
@@ -41,28 +57,32 @@ class Chromosome:
                 )
                 for h in connectable_hidden:
                     weight = np.random.uniform(-1, 1)
-                    edges.append(EdgeGene(len(edges), i, h, weight))
+                    edges[edge_id] = EdgeGene(edge_id, i, h, weight)
+                    edge_id += 1
+
             # Create edges between hidden and output nodes
             for h in hidden_ids:
                 connectable_output = random.sample(
-                    output_ids,
-                    random.randint(int(outputs * connectivity_ratio), outputs),
+                    output_ids, random.randint(int(outputs * connectivity_ratio), outputs)
                 )
                 for o in connectable_output:
                     weight = np.random.uniform(-1, 1)
-                    edges.append(EdgeGene(len(edges), h, o, weight))
+                    edges[edge_id] = EdgeGene(edge_id, h, o, weight)
+                    edge_id += 1
 
         self.nodes = nodes
         self.edges = edges
+        if not hasattr(self, "num_layers"):
+            self.num_layers = num_layers
 
     def show(
         self, width_scale: float = 3.0, min_width: float = 0.5, save: bool = False
     ):
         def create_directed_graph(c: Chromosome):
             g = nx.DiGraph()
-            for node in c.nodes:
+            for node in c.nodes.values():
                 g.add_node(node.id, layer=node.layer)
-            for edge in c.edges:
+            for edge in c.edges.values():
                 g.add_edge(edge.source, edge.target, weight=edge.weight)
             return g
 
