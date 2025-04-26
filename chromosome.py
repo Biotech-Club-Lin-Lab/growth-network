@@ -97,7 +97,10 @@ class Chromosome:
             # Use provided DataFrames
             self.nodes = nodes_df
             self.edges = edges_df
-        
+
+        # Initialize the neural network
+        self.NN = self.NN(self)
+       
         # Calculate number of layers dynamically
         self.num_layers = len(self.nodes['layer'].unique())
     
@@ -306,3 +309,49 @@ class Chromosome:
             plt.show()
         
         return ax
+    
+    class NN: #embed within the Chromosome class
+        def __init__(self, C):
+            self.edges = C.edges
+            self.nodes = C.nodes
+            
+            #results is a dataframe that will hold the output of each node
+            self.results = pd.DataFrame({'node id':self.nodes['id'].values, 'result':None})
+
+        def run(self, X):
+            #set input vals
+            inp_ids = self.nodes.loc[self.nodes['layer'] == 'input', 'id'].values
+            self.results.loc[self.results['node id'].isin(inp_ids), 'result'] = X
+
+            ids_to_run = self.nodes.loc[~self.nodes['id'].isin(inp_ids), 'id'].values
+        
+            def ReLU(x):
+                return np.maximum(0, x)
+            
+            def runNode(node_id):
+                source_edges = self.edges.loc[self.edges['target']==node_id]
+                source_vals = self.results.loc[self.results['node id'].isin(source_edges['source'].values)]
+                
+                #check if all source nodes have been calculated
+                if source_vals['result'].isnull().any():
+                    priors = source_vals.loc[source_vals['result'].isnull(), 'node id'].values
+                    for prior in priors:
+                        runNode(prior) #recursive call
+
+                x = source_vals['result'].values
+                w = source_edges['weight'].values
+                b = self.nodes.loc[self.nodes['id'] == node_id, 'bias'].values[0]
+
+                output = ReLU(x@w + b)
+                self.results.loc[self.results['node id'] == node_id, 'result'] = output #set result value
+            
+            for node_id in ids_to_run:
+                #check if node has been calculated
+                if self.results.loc[self.results['node id'] == node_id, 'result'].isnull().any():
+                    runNode(node_id)
+                if not self.results['result'].isnull().any():
+                    break
+            
+            # display(self.results)
+            outputs = self.results.loc[self.results['node id'].isin(self.nodes.loc[self.nodes['layer'] == 'output', 'id'].values), 'result'].values
+            return outputs
