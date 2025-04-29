@@ -14,7 +14,7 @@ class Chromosome:
         edges_df: pd.DataFrame = None,
         inputs: int = None,
         outputs: int = None,
-        hidden: int = None,
+        hidden_layers: list = None,  # List of neurons per hidden layer
     ):
         self.id = id
 
@@ -27,12 +27,15 @@ class Chromosome:
             node_count = 0
             edge_count = 0
             
-            # Create iterables
-            input_ids = range(inputs)
-            hidden_ids = range(inputs, inputs + hidden)
-            output_ids = range(inputs + hidden, inputs + hidden + outputs)
+            # If no hidden_layers specified, default to a single hidden layer
+            if hidden_layers is None:
+                hidden_layers = [5]  # Default to one hidden layer with 5 neurons
+            
+            # Calculate total number of hidden neurons across all layers
+            total_hidden = sum(hidden_layers)
             
             # Create input nodes
+            input_start_id = node_count
             for i in range(inputs):
                 self.nodes.loc[node_count] = {
                     'id': node_count,
@@ -42,17 +45,24 @@ class Chromosome:
                 }
                 node_count += 1
             
-            # Create hidden nodes
-            for h in range(hidden):
-                self.nodes.loc[node_count] = {
-                    'id': node_count,
-                    'layer': 1,  # Using integer for hidden layers
-                    'layer_id': h,
-                    'bias': np.random.uniform(-1, 1)
-                }
-                node_count += 1
+            # Create hidden nodes for each layer
+            hidden_layer_start_ids = []
+            current_hidden_id = node_count
+            
+            for layer_idx, neurons in enumerate(hidden_layers):
+                hidden_layer_start_ids.append(current_hidden_id)
+                for h in range(neurons):
+                    self.nodes.loc[node_count] = {
+                        'id': node_count,
+                        'layer': layer_idx + 1,  # Layer 1, 2, 3, etc.
+                        'layer_id': h,
+                        'bias': np.random.uniform(-1, 1)
+                    }
+                    node_count += 1
+                current_hidden_id = node_count
             
             # Create output nodes
+            output_start_id = node_count
             for o in range(outputs):
                 self.nodes.loc[node_count] = {
                     'id': node_count,
@@ -62,11 +72,16 @@ class Chromosome:
                 }
                 node_count += 1
             
-            # Create edges between input and hidden nodes
+            # Create edges between layers
+            # First, connect input to first hidden layer
+            input_ids = range(input_start_id, input_start_id + inputs)
+            first_hidden_ids = range(hidden_layer_start_ids[0], 
+                                     hidden_layer_start_ids[0] + hidden_layers[0])
+            
             for i in input_ids:
                 connectable_hidden = random.sample(
-                    list(hidden_ids), 
-                    random.randint(int(hidden * connectivity_ratio), hidden)
+                    list(first_hidden_ids), 
+                    random.randint(int(hidden_layers[0] * connectivity_ratio), hidden_layers[0])
                 )
                 for h in connectable_hidden:
                     self.edges.loc[edge_count] = {
@@ -78,8 +93,35 @@ class Chromosome:
                     }
                     edge_count += 1
             
-            # Create edges between hidden and output nodes
-            for h in hidden_ids:
+            # Connect between hidden layers
+            for layer_idx in range(len(hidden_layers) - 1):
+                current_layer_ids = range(hidden_layer_start_ids[layer_idx], 
+                                         hidden_layer_start_ids[layer_idx] + hidden_layers[layer_idx])
+                next_layer_ids = range(hidden_layer_start_ids[layer_idx + 1], 
+                                      hidden_layer_start_ids[layer_idx + 1] + hidden_layers[layer_idx + 1])
+                
+                for h_current in current_layer_ids:
+                    connectable_next = random.sample(
+                        list(next_layer_ids),
+                        random.randint(int(hidden_layers[layer_idx + 1] * connectivity_ratio), 
+                                      hidden_layers[layer_idx + 1])
+                    )
+                    for h_next in connectable_next:
+                        self.edges.loc[edge_count] = {
+                            'id': edge_count,
+                            'source': h_current,
+                            'target': h_next,
+                            'weight': np.random.uniform(-1, 1),
+                            'enabled': True
+                        }
+                        edge_count += 1
+            
+            # Connect last hidden layer to output
+            last_hidden_ids = range(hidden_layer_start_ids[-1], 
+                                   hidden_layer_start_ids[-1] + hidden_layers[-1])
+            output_ids = range(output_start_id, output_start_id + outputs)
+            
+            for h in last_hidden_ids:
                 connectable_output = random.sample(
                     list(output_ids),
                     random.randint(int(outputs * connectivity_ratio), outputs)
@@ -97,12 +139,12 @@ class Chromosome:
             # Use provided DataFrames
             self.nodes = nodes_df
             self.edges = edges_df
-
-        # Initialize the neural network
-        self.NN = self.NN(self)
-       
+        
         # Calculate number of layers dynamically
         self.num_layers = len(self.nodes['layer'].unique())
+        
+        # Initialize the NN instance for running the network
+        self.NN = self.NN(self)
     
     # Node-related methods
     def get_node_by_id(self, node_id):
@@ -130,6 +172,10 @@ class Chromosome:
     def get_hidden_nodes(self):
         """Get all hidden nodes (anything not input or output)"""
         return self.nodes[(self.nodes['layer'] != 'input') & (self.nodes['layer'] != 'output')]
+    
+    def get_hidden_layer_nodes(self, layer_num):
+        """Get nodes from a specific hidden layer"""
+        return self.nodes[self.nodes['layer'] == layer_num]
     
     # Edge-related methods
     def get_edge_by_id(self, edge_id):
@@ -310,48 +356,55 @@ class Chromosome:
         
         return ax
     
-    class NN: #embed within the Chromosome class
+    class NN:
         def __init__(self, C):
             self.edges = C.edges
             self.nodes = C.nodes
             
-            #results is a dataframe that will hold the output of each node
-            self.results = pd.DataFrame({'node id':self.nodes['id'].values, 'result':None})
-
+            # Results is a dataframe that will hold the output of each node
+            self.results = pd.DataFrame({'node id': C.nodes['id'].values, 'result': None})
+        
         def run(self, X):
-            #set input vals
+            # Set input vals
             inp_ids = self.nodes.loc[self.nodes['layer'] == 'input', 'id'].values
+            
+            # Ensure X has the correct length
+            if len(X) != len(inp_ids):
+                raise ValueError(f"Input size {len(X)} doesn't match network input nodes {len(inp_ids)}")
+                
             self.results.loc[self.results['node id'].isin(inp_ids), 'result'] = X
-
             ids_to_run = self.nodes.loc[~self.nodes['id'].isin(inp_ids), 'id'].values
         
             def ReLU(x):
                 return np.maximum(0, x)
             
             def runNode(node_id):
-                source_edges = self.edges.loc[self.edges['target']==node_id]
+                source_edges = self.edges.loc[(self.edges['target'] == node_id) & (self.edges['enabled'] == True)]
                 source_vals = self.results.loc[self.results['node id'].isin(source_edges['source'].values)]
                 
-                #check if all source nodes have been calculated
+                # Check if all source nodes have been calculated
                 if source_vals['result'].isnull().any():
                     priors = source_vals.loc[source_vals['result'].isnull(), 'node id'].values
                     for prior in priors:
-                        runNode(prior) #recursive call
-
+                        runNode(prior)  # Recursive call
+                    
+                    # Refresh values after recursive calls
+                    source_vals = self.results.loc[self.results['node id'].isin(source_edges['source'].values)]
+                
                 x = source_vals['result'].values
                 w = source_edges['weight'].values
                 b = self.nodes.loc[self.nodes['id'] == node_id, 'bias'].values[0]
-
-                output = ReLU(x@w + b)
-                self.results.loc[self.results['node id'] == node_id, 'result'] = output #set result value
+                output = ReLU(np.dot(x, w) + b)
+                self.results.loc[self.results['node id'] == node_id, 'result'] = output  # Set result value
             
             for node_id in ids_to_run:
-                #check if node has been calculated
+                # Check if node has been calculated
                 if self.results.loc[self.results['node id'] == node_id, 'result'].isnull().any():
                     runNode(node_id)
                 if not self.results['result'].isnull().any():
                     break
             
-            # display(self.results)
-            outputs = self.results.loc[self.results['node id'].isin(self.nodes.loc[self.nodes['layer'] == 'output', 'id'].values), 'result'].values
+            # Return output values
+            outputs = self.results.loc[self.results['node id'].isin(
+                self.nodes.loc[self.nodes['layer'] == 'output', 'id'].values), 'result'].values
             return outputs
