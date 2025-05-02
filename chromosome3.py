@@ -1,10 +1,3 @@
-def update_edge_weight(self, edge_id, new_weight):
-        """Update an edge's weight"""
-        idx = self.edges.index[self.edges['id'] == edge_id].tolist()
-        if idx:
-            self.edges.loc[idx[0], 'weight'] = new_weight
-            return True
-        return False
 import random
 import numpy as np
 import networkx as nx
@@ -66,7 +59,9 @@ class Chromosome:
                         'id': node_count,
                         'layer': layer_idx + 1,  # Layer 1, 2, 3, etc.
                         'layer_id': h,
-                        'bias': np.random.uniform(-1, 1)
+                        'bias': np.random.uniform(-1, 1),
+                        'birth_generation': generation,
+                        'division_count': 0
                     }
                     node_count += 1
                 current_hidden_id = node_count
@@ -283,6 +278,14 @@ class Chromosome:
             return True
         return False
     
+    def update_edge_weight(self, edge_id, new_weight):
+        """Update an edge's weight"""
+        idx = self.edges.index[self.edges['id'] == edge_id].tolist()
+        if idx:
+            self.edges.loc[idx[0], 'weight'] = new_weight
+            return True
+        return False
+    
     def get_connection_count(self, node_id):
         """Get the total number of connections for a node (both incoming and outgoing)"""
         incoming = len(self.get_edges_by_target(node_id))
@@ -292,13 +295,6 @@ class Chromosome:
     def evaluate_division(self, node_id, division_model):
         """
         Evaluate whether a node should divide based on input from another neural network
-        
-        Args:
-            node_id: ID of the node to evaluate
-            division_model: A Chromosome instance that acts as the division decision model
-            
-        Returns:
-            bool: True if the node should divide, False otherwise
         """
         node = self.get_node_by_id(node_id)
         
@@ -325,29 +321,33 @@ class Chromosome:
         max_age = 20  # Arbitrary maximum age for normalization
         max_division = 5  # Arbitrary maximum divisions for normalization
         max_connections = 20  # Arbitrary maximum connections for normalization
+        max_node_id = 100  # Arbitrary maximum node ID for normalization
         
         normalized_age = node_age / max_age
         normalized_division = division_count / max_division
         normalized_connections = connection_count / max_connections
+        normalized_node_id = node_id / max_node_id  # Normalize node ID
         
         # Use the division model to decide
-        inputs = [normalized_age, normalized_division, normalized_connections]
+        inputs = [normalized_age, normalized_division, normalized_connections, normalized_node_id]
         output = division_model.NN.run(inputs)
         
-        # Decision is based on the output value (threshold at 0.5)
-        return output[0] > 0.5
-    
+        threshold = random.random()*.3  # Simple random value between 0 and .3
+
+        # Decision is based on the output value with variable threshold
+        return output[0] > threshold
+
     def perform_division(self, node_id, bias_func=None):
         """
-        Perform division of a node, creating daughter nodes
+        Perform division of a node, creating a single daughter node
         
         Args:
             node_id: ID of the parent node to divide
-            bias_func: Function to calculate bias of daughter nodes based on parent node
-                       If None, uses a small random variation of parent's bias
-                       
+            bias_func: Function to calculate bias of daughter node based on parent node
+                    If None, uses a small random variation of parent's bias
+                    
         Returns:
-            list: IDs of the newly created daughter nodes
+            list: ID of the newly created daughter node in a list
         """
         parent_node = self.get_node_by_id(node_id)
         
@@ -359,7 +359,6 @@ class Chromosome:
         parent_idx = self.nodes.index[self.nodes['id'] == node_id].tolist()[0]
         self.nodes.at[parent_idx, 'division_count'] += 1
         
-        # Create two daughter nodes in the same layer
         # Default bias function: random variation of parent bias
         if bias_func is None:
             def bias_func(parent_bias):
@@ -371,40 +370,36 @@ class Chromosome:
         except AttributeError:
             current_generation = 0
         
-        # Create daughter nodes
-        daughter1_id = self.add_node(
+        # Create a single daughter node in the same layer
+        daughter_id = self.add_node(
             layer=parent_node['layer'],
             bias=bias_func(parent_node['bias']),
             birth_generation=current_generation
         )
         
-        daughter2_id = self.add_node(
-            layer=parent_node['layer'],
-            bias=bias_func(parent_node['bias']),
-            birth_generation=current_generation
-        )
+        # Connect parent to daughter
+        self.add_edge(source=node_id, target=daughter_id)
         
-        # Connect daughters to parent
-        self.add_edge(source=node_id, target=daughter1_id)
-        self.add_edge(source=node_id, target=daughter2_id)
-        
-        # Connect each daughter to everything parent was connected to
+        # Connect daughter to everything parent was connected to
         
         # Incoming connections
         for _, edge in self.get_edges_by_target(node_id).iterrows():
-            # Skip self-loops
-            if edge['source'] != node_id:
-                self.add_edge(source=edge['source'], target=daughter1_id, weight=edge['weight'])
-                self.add_edge(source=edge['source'], target=daughter2_id, weight=edge['weight'])
+            # Skip self-loops and connections from parent (to avoid creating loops)
+            if edge['source'] != node_id and edge['source'] != daughter_id:
+                self.add_edge(source=edge['source'], target=daughter_id, weight=edge['weight'])
         
         # Outgoing connections
         for _, edge in self.get_edges_by_source(node_id).iterrows():
-            # Skip self-loops
-            if edge['target'] != node_id:
-                self.add_edge(source=daughter1_id, target=edge['target'], weight=edge['weight'])
-                self.add_edge(source=daughter2_id, target=edge['target'], weight=edge['weight'])
+            # Skip self-loops and connections to parent (to avoid creating loops)
+            if edge['target'] != node_id and edge['target'] != daughter_id:
+                self.add_edge(source=daughter_id, target=edge['target'], weight=edge['weight'])
         
-        return [daughter1_id, daughter2_id]
+        # Check for and remove any self-connections in the network
+        self_connections = self.edges[self.edges['source'] == self.edges['target']]
+        for _, edge in self_connections.iterrows():
+            self.disable_edge(edge['id'])
+        
+        return [daughter_id] 
     
     def evaluate_all_nodes_for_division(self, division_model, bias_func=None):
         """
